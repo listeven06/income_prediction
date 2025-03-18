@@ -11,6 +11,21 @@ library(tidyverse)
 library(bayesplot)
 ```
 
+# Literature Review
+
+Lecture Review:
+1994 Census Income dataset.
+
+Marcel Jirina and Marcel Jirina Jr.
+Inverted Index of Neighbor Classifier (IINC), an enhanced classification method designed to improve upon traditional nearest neighbor classifiers. Optimizing the distance function used to measure similarity between data points. The choice of distance function significantly impacts the classification error rate.
+
+Mathieu Guillame-Bert and Artur Dubrawski
+Batched Lazy Decision Tress utilizes an algorithm that avoids unnecessary visits to irrelevant nodes when it is used to make predictions with either eagerly or lazily trained decision trees. Improved computation time as well as memory consumption without compromising accuracy.
+
+Ron Kohhavi
+NBTree, a hybrid of decision-tree classifiers and Naïve-Bayes classifiers: the decision-tree nodes contain univariate splits as regular decision-trees, but the leaves contain Naïve Bayes classifiers. Keeps the interpretability of Naïve-Bayes and decision trees but is scalable. 
+
+
 # Reading in Data
 
 ```{r}
