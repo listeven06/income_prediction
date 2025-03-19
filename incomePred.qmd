@@ -5,6 +5,7 @@ title: "incomePred"
 # Load Libraries
 
 ```{r load_libraries}
+library(janitor)
 library(bayesrules)
 library(rstanarm)
 library(tidyverse)
@@ -79,8 +80,6 @@ boxplot(adult_income$education_num, main="Boxplot of Years of Education", col="l
 ```
 
 ```{r test}
-test <- all_data[, c("education_num", "sex", "race", "age", "income")]
-
 set.seed(123)  # For reproducibility
 train_indices <- sample(1:nrow(adult_income), size = 0.8 * nrow(adult_income))
 
@@ -108,3 +107,192 @@ summary(bayesian_model)
 mcmc_trace(bayesian_model, size = 0.1)
 mcmc_dens_overlay(bayesian_model)
 ```
+
+# Prediction
+
+```{r prediction_probability_training}
+bayesian_model_df <- as.data.frame(bayesian_model)
+first_50 <- head(bayesian_model_df, 50)
+
+# Function that calculates model trend on probability scale
+prob_trend <- function(beta0, beta_edu, beta_sex, beta_race1, beta_race2, beta_race3, beta_race4, beta_age, education_num, sex, race, age) {
+  logit <- beta0 + 
+    beta_edu * education_num + 
+    beta_sex * sex + 
+    beta_race1 * (race == 1) + 
+    beta_race2 * (race == 2) +
+    beta_race3 * (race == 3) +
+    beta_race4 * (race == 4) +
+    beta_age * age
+  
+  exp(logit) / (1 + exp(logit))
+}
+
+
+
+```
+
+
+```{r weather}
+data("weather_perth")
+weather <- weather_perth %>%
+  select(day_of_year, raintomorrow, humidity9am, humidity3pm, raintoday)
+weather <- weather %>%
+  mutate(raintomorrow = as.numeric(raintomorrow == "Yes"))
+
+rain_model_1 <- stan_glm(raintomorrow ~ humidity9am,
+                         data = weather,
+                         family = binomial,
+                         chains = 4, 
+                         iter = 5000*2, 
+                         seed = 84735)
+prior_summary(rain_model_1)
+mcmc_dens_overlay(rain_model_1)
+rain_model_1_df <- as.data.frame(rain_model_1)
+head(rain_model_1_df, 3)
+
+first_50 <- head(rain_model_1_df, 50)
+
+prob_trend <- function(beta0, beta1, x){
+  exp(beta0 + beta1*x) / (1 + exp(beta0 + beta1*x))}
+
+ggplot(weather, aes(x = humidity9am, y = raintomorrow)) + 
+  mapply(function(beta0, beta1) {
+    stat_function(fun = prob_trend,
+      args = list(beta0 = beta0, beta1 = beta1), size = 0.1)
+    },
+    beta0 = first_50$`(Intercept)`, beta1 = first_50$humidity9am
+  ) + 
+  labs(y = "probability of rain")
+```
+
+```{r old code}
+
+predictions <- first_50 %>%
+  mutate(id = row_number()) %>%
+  rowwise() %>%
+  mutate(prob = mean(map_dbl(1:50, function(i) {
+    prob_trend(
+      beta0 = first_50$`(Intercept)`[i],
+      beta_edu = first_50$education_num[i],
+      beta_sex = first_50$`factor(sex)1`[i],
+      beta_race1 = first_50$`factor(race)1`[i],
+      beta_race2 = first_50$`factor(race)2`[i],
+      beta_race3 = first_50$`factor(race)3`[i],
+      beta_race4 = first_50$`factor(race)4`[i],
+      beta_age = first_50$age[i],
+      education_num = education_num,
+      sex = `factor(sex)1`,  
+      race = case_when(
+        `factor(race)1` == 1 ~ 1,
+        `factor(race)2` == 1 ~ 2,
+        `factor(race)3` == 1 ~ 3,
+        `factor(race)4` == 1 ~ 4,
+        TRUE ~ 0 
+      ),
+      age = age
+    )
+  })))
+
+
+ggplot(predictions, aes(x = id, y = prob)) +
+  geom_point(alpha = 0.5, color = "lightblue") +
+  labs(y = "Probability of Income > $50K", x = "Individual Index", 
+       title = "Predicted Probabilities from First 50 Posterior Samples") +
+  theme_minimal()
+
+```
+
+```{r old code}
+ggplot(train_data, aes(x = education_num, y = income)) + mapply(function(beta0, beta_edu, beta_sex, beta_race1, beta_race2, beta_race3, beta_race4, beta_age) {
+  stat_function(fun = prob_trend,
+                args = list(beta0 = beta0,
+                            beta_edu = beta_edu,
+                            beta_sex = beta_sex,
+                            beta_race1 = beta_race1,
+                            beta_race2 = beta_race2,
+                            beta_race3 = beta_race3,
+                            beta_race4 = beta_race4,
+                            beta_age = beta_age), size = 0.1)
+},
+beta0 = first_50$`(Intercept)`, 
+beta_edu = first_50$education_num,
+beta_sex = first_50$`factor(sex)1`,
+beta_race1 = first_50$`factor(race)1`,
+beta_race2 = first_50$`factor(race)2`,
+beta_race3 = first_50$`factor(race)3`,
+beta_race4 = first_50$`factor(race)4`,
+beta_age = first_50$age
+)
+
+```
+
+
+```{r simple_income_model}
+set.seed(84735)  # For reproducibility
+train_indices <- sample(seq_len(nrow(adult_income)), size = 0.8 * nrow(adult_income))
+
+train_data <- adult_income[train_indices,]
+test_data <- adult_income[-train_indices,]
+
+income_model_1 <- stan_glm(income ~ education_num,
+                           data = train_data,
+                           family = binomial,
+                           chains = 4,
+                           iter = 5000*2,
+                           seed = 84735)
+prior_summary(income_model_1)
+mcmc_dens_overlay(income_model_1)
+mcmc_trace(income_model_1)
+
+income_model_1_df <- as.data.frame(income_model_1)
+head(income_model_1_df, 3)
+
+first_50 <- head(income_model_1_df, 50)
+
+prob_trend <- function(beta0, beta1, x){
+  exp(beta0 + beta1*x) / (1 + exp(beta0 + beta1*x))
+}
+
+ggplot(train_data, aes(x=education_num, y=income)) +
+  mapply(function(beta0, beta1){
+    stat_function(fun = prob_trend,
+                  args = list(beta0 = beta0, beta1 = beta1), size = 0.1)
+  },
+  beta0 = first_50$`(Intercept)`, beta1 = first_50$education_num) +
+  labs(y = "probability of making more than 50K")
+
+logodds_prediction <- posterior_linpred(
+  income_model_1, newdata = data.frame(education_num = 5)
+)
+
+prob_prediction <- posterior_epred(
+  income_model_1, newdata = data.frame(education_num = 5)
+)
+
+binary_prediction <- posterior_predict(
+  income_model_1, newdata = data.frame(education_num = 5)
+)
+
+income_model_1_df %>%
+  mutate(log_odds = c(logodds_prediction), prob=c(prob_prediction), Y= c(binary_prediction)) %>%
+  head(3)
+
+table(binary_prediction)
+colMeans(binary_prediction)
+
+income_pred_1 <- posterior_predict(income_model_1, newdata = test_data)
+
+income_classifications <- test_data %>%
+  mutate(income_prop = colMeans(income_pred_1)) %>%
+  mutate(income_class_1 = as.numeric(income_prop >= 0.5)) %>%
+  select(education_num, income_prop, income_class_1, income)
+
+tabyl(income_classifications, income, income_class_1)
+classification_summary(model = income_model_1, data = test_data, cutoff = 0.5)
+
+
+
+``` 
+
+
