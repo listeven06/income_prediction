@@ -31,7 +31,7 @@ NBTree, a hybrid of decision-tree classifiers and Naïve-Bayes classifiers: the 
 
 ```{r read}
 all_data <- read.csv("adult.data")
-colnames(all_data) <- c("age", "workclass", "final_weight","education", "education_num", "martial-status", "occupation", "relationship", "race", "sex", "capital-gain", "capital-loss", "hours_per_week", "native-country", "income")
+colnames(all_data) <- c("age", "workclass", "final_weight","education", "education_num", "martial_status", "occupation", "relationship", "race", "sex", "capital_gain", "capital_loss", "hours_per_week", "native_country", "income")
 ```
 
 # Project Objective
@@ -41,7 +41,16 @@ Given information about an individual adult in the U.S. and we want to use Bayes
 # Exploratory Data Analysis
 
 ```{r clean}
-adult_income <- all_data[, c("education_num", "sex", "race", "age", "hours_per_week", "income")]
+adult_income <- subset(all_data, select = -c(workclass, occupation, native_country))
+
+colSums(is.na(adult_income))  # Count missing values in each column
+sum(is.na(adult_income))  # Total missing values in dataset
+
+
+barplot(table(adult_income$education), main="Bar Chart of Education", col="lightblue", xlab = "Education", ylab = "Frequency")
+barplot(table(adult_income$martial_status), main="Bar Chart of Martial Status", col="lightblue", xlab = "Martial Status", ylab = "Frequency")
+barplot(table(adult_income$relationship), main="Bar Chart of Relationship Status", col="lightblue", xlab = "Relationship Status", ylab = "Frequency")
+barplot(table(adult_income$final_weight), main="Bar Chart of Final Weight", col="lightblue", xlab = "Weight", ylab = "Frequency")
 
 adult_income$sex <- trimws(adult_income$sex)
 adult_income$sex <- ifelse(adult_income$sex == "Male", 1, 0)
@@ -55,8 +64,6 @@ adult_income$race <- ifelse(adult_income$race == "White", 0,
                      ifelse(adult_income$race == "Asian-Pac-Islander", 2,
                      ifelse(adult_income$race == "Amer-Indian-Eskimo", 3, 4))))
 
-colSums(is.na(adult_income))  # Count missing values in each column
-sum(is.na(adult_income))  # Total missing values in dataset
 ```
 
 ```{r exploratory}
@@ -293,6 +300,35 @@ tabyl(te_income_classifications_3, income, income_class_1)
 classification_summary(model = income_model_3, data = test_data, cutoff = 0.5)
 ```
 
+# Model 4
+
+```{r best_model?}
+income_model_4 <- stan_glm(income ~ final_weight + factor(relationship) + sex + hours_per_week + education_num + age,
+                           data = train_data,
+                           family = binomial,
+                           chains = 4,
+                           iter = 5000*2,
+                           seed = 84735)
+
+prior_summary(income_model_4)
+mcmc_dens_overlay(income_model_4)
+mcmc_trace(income_model_4)
+```
+
+## Predictions
+
+```{r model_4_pred}
+te_income_pred_4 <- posterior_predict(income_model_4, newdata = test_data)
+
+te_income_classifications_4 <- test_data %>%
+  mutate(income_prop = colMeans(te_income_pred_4)) %>%
+  mutate(income_class_1 = as.numeric(income_prop >= 0.5)) %>%
+  select(education_num, income_prop, income_class_1, income)
+
+tabyl(te_income_classifications_4, income, income_class_1)
+classification_summary(model = income_model_4, data = test_data, cutoff = 0.5)
+```
+
 # Prior Intuition
 
 So for our logistic regression, the prior should reflect reasonable assumptions about the relationship between predictors and the log-odds (or odds ratio) of the outcome. For years of education, education_num, the coefficient should represent the expected change in logs-odd for every 1-unit (1 year) increase in education. We assumed a prior of 0.10 would be reasonable. It implies there's an approximate 9% increase in odds per unit increase (1 year of additional education), indicating there's a strong association between the years of education and whether or not they make more than 50K. For sex, since its a categorical and binary variable, it would either be 0 or 1. This would mean that the our coefficient for sex would be the difference in log-odds from going 0 (female) to 1 (male) while keeping all other factors constant. Given that this data set was taken from 1994, we would assume that the pay gap between males and females existed more prominently. We assumed a prior of 0.5 would be reasonable. It implies there's an approximate 33% increase in odds going from female to male, indicating there's also a strong association between sex and whether or not they make more than 50K. For race, there's a total of 4 different coefficients, each representing the difference in log-odds from the baseline (white). For the coefficient of each race, we assumed that there will be a decrease in the log-odds for every race when comparing to the baseline. In particular, we did -0.5 all. As for age, we believe there's that income tends to increase with age but at a diminishing rate. So, We assume a small positive effect of 0.02 or 2% increase in log-odds per increase in age. As for the standard deviation of the priors, we chose 0.1 for ones that we were less confident in so there's room for flexibility. For example, the number of years of education, A PhD versus a high school diploma has a huge difference, but extra years of education might not always translate to higher earnings. So allow for more variation in `education_num`. However for age, since age effects on income are well-documented and we expect a consistent but small positive relationship, we chose 0.01 to reflect our confidence. We did the same for race and sex. Since we were confident in the sex one, we left less room for variation, hence why we chose 0.1. For race, since we weren't sure if the change was the same for each race, we left more room for variation, hence the 0.1.
@@ -300,7 +336,6 @@ So for our logistic regression, the prior should reflect reasonable assumptions 
 # Key Takeaways
 
 The model performs worse when we include race. Even though based on prior knowledge we know that race plays a factor in determining how much an individual makes, the data too unbalanced to the point where the effects of race are masked. Add
-
 
 
 
